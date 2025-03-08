@@ -49,7 +49,7 @@ class Camera:
         y = max(-(self.world_size.height - self.camera.height), y)
 
         self.camera = pygame.Rect(x, y, self.camera.width, self.camera.height)
-
+     
 # Player class
 class Player(pygame.sprite.Sprite):
     """
@@ -65,6 +65,7 @@ class Player(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.x = 100  # Starting X position
         self.rect.y = FLOOR_HEIGHT - self.rect.height  # Starting Y position (on the floor)
+        
         self.velocity_y = 0  # For gravity
         self.on_ground = False
 
@@ -75,6 +76,9 @@ class Player(pygame.sprite.Sprite):
         self.graph_creation_times = []  # Store the creation time for each graph
 
         self.facing = 'right'  # New variable to track which direction the character is facing
+
+        self.explosions = pygame.sprite.Group() # store active explosions
+        self.explosion_frames = self.load_explosion_frames('images/PNG/Explosion_9', 10, scale_factor = 0.1)
 
     def load_animation_frames(self, image_path, frame_width, frame_height, num_frames, scale_factor=2):
         """
@@ -131,6 +135,8 @@ class Player(pygame.sprite.Sprite):
         # Move player with velocity
         self.rect.x += self.movex
         self.rect.y += self.velocity_y
+
+        self.hitbox = pygame.Rect(self.rect.x + 80, self.rect.y + 110, self.rect.width - 170, self.rect.height - 100)
 
         # Prevent going below the floor (and handle jumping)
         if self.rect.y >= FLOOR_HEIGHT - self.rect.height:
@@ -189,9 +195,44 @@ class Player(pygame.sprite.Sprite):
             plotPoints = plotPoints[::-1]  # Reverse the list
             plotPoints = [[x - 1000, y] for x, y in plotPoints]
         else:
-            plotPoints = [[x + 160, y] for x, y in plotPoints]
+            plotPoints = [[x + 180, y] for x, y in plotPoints]
 
         return plotPoints
+    
+    def load_explosion_frames(self, image_path, num_frames, scale_factor = 1):
+        frames = []
+        for i in range(1, num_frames + 1):
+            image = pygame.image.load(f"{image_path}/Explosion_{i}.png").convert_alpha()
+            image = pygame.transform.scale(image, (image.get_width() * scale_factor, image.get_height() * scale_factor))
+            frames.append(image)
+        return frames
+
+# Explosion Class
+class Explosion(pygame.sprite.Sprite):
+    def __init__(self, x, y, frames, duration = 1000):
+        super().__init__()
+        self.frames = frames
+        self.index = 0
+        self.image = self.frames[self.index]
+        self.rect = self.image.get_rect(center=(x, y))
+        self.last_update = pygame.time.get_ticks()
+        self.frame_delay = duration / len(self.frames)
+
+        self.animation_duration = duration 
+
+
+    def update(self):
+        # animate the explosion 
+        now = pygame.time.get_ticks()
+        if now - self.last_update > self.frame_delay:
+            self.last_update = now
+            self.index += 1
+            
+            if self.index >= len(self.frames):
+                self.kill() # end explosion 
+                return 
+                
+            self.image = self.frames[self.index]   
 
 # Function to draw the graph (Fixed relative to the floor, affected by camera)
 # Setup
@@ -284,13 +325,30 @@ while main:
         # Draw the spheres that follow the graph
         if player.sphere_indices[i] < len(graph):
             sphere_x, sphere_y = graph[player.sphere_indices[i]]
+            sphere_rect = pygame.Rect(sphere_x - player.sphere_radius, sphere_y - player.sphere_radius, player.sphere_radius * 2, player.sphere_radius * 2)
             sphere_x, sphere_y = camera.apply(pygame.Rect(sphere_x, sphere_y, 0, 0)).topleft  # Apply camera to the sphere
             sphere_color = [0, 0, 255]  # Blue color for the sphere
             pygame.draw.circle(world, sphere_color, (int(sphere_x), int(sphere_y)), player.sphere_radius)
+            
+            # check for collision with the player
+            if sphere_rect.colliderect(player.hitbox):
+                print("Hit")
+                explosion = Explosion(sphere_x, sphere_y, player.explosion_frames, duration = 400)
+                player.explosions.add(explosion)
+
+                player.graphs[i].pop(player.sphere_indices[i])
+
+                player.sphere_indices[i] = len(player.graphs[i])
+            
             player.sphere_indices[i] += 1
 
     # Update player position and sprite
     player.update()
+
+    # pygame.draw.rect(world, (0, 255, 0), camera.apply(player.hitbox), 2)  # Green hitbox for debugging
+
+    player.explosions.update()
+    player.explosions.draw(world)
 
     # Manually draw the player sprite using the camera
     world.blit(player.image, camera.apply(player))
