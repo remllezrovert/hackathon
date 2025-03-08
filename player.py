@@ -3,6 +3,7 @@ import pygame
 import sys
 import os
 from math import *
+from enemy import Enemy  # Importing the Enemy class from the enemy.py file
 
 # Variables
 worldx = 960
@@ -74,6 +75,8 @@ class Player(pygame.sprite.Sprite):
         self.sphere_indices = []  # Store the sphere index for each graph
         self.graph_creation_times = []  # Store the creation time for each graph
 
+        self.facing = 'right'  # New variable to track which direction the character is facing
+
     def load_animation_frames(self, image_path, frame_width, frame_height, num_frames, scale_factor=2):
         """
         Chop the sprite sheet into individual frames and scale them.
@@ -137,19 +140,25 @@ class Player(pygame.sprite.Sprite):
         else:
             self.on_ground = False
 
-        # Player animation (moving left and right)
-        if self.movex < 0:  # moving left
+        # Update facing direction based on movement
+        if self.movex < 0:  # Moving left
+            self.facing = 'left'
             self.frame += 1
             if self.frame >= len(self.images) * ani:
                 self.frame = 0
             self.image = pygame.transform.flip(self.images[self.frame // ani], True, False)
-        elif self.movex > 0:  # moving right
+        elif self.movex > 0:  # Moving right
+            self.facing = 'right'
             self.frame += 1
             if self.frame >= len(self.images) * ani:
                 self.frame = 0
             self.image = self.images[self.frame // ani]
-        else:  # idle animation when not moving
-            self.image = self.images[0]  # If idle, show the first frame
+        else:  # Idle animation when not moving
+            if self.facing == 'left':  # Keep the left-facing frame if the player was last moving left
+                self.image = self.images[0]  # First frame of the left-facing animation
+                self.image = pygame.transform.flip(self.images[self.frame // ani], True, False)
+            else:  # Keep the right-facing frame if the player was last moving right
+                self.image = self.images[0]  # First frame of the right-facing animation
 
     def jump(self):
         """
@@ -157,23 +166,6 @@ class Player(pygame.sprite.Sprite):
         """
         if self.on_ground:
             self.velocity_y = -15  # Jump force
-
-    def drawgraph(self, equationStr="d[0]=sin(50*x)*50"):
-        plotPoints = []
-        for x in range(self.rect.x, self.rect.x + 1000):  # Adjust range as needed
-            d = [0]
-            exec(equationStr)
-            y = d[0]
-            y = -y + self.rect.y + 155  # Adjust Y value to fit the floor
-            plotPoints.append([x, y])
-
-        if self.movex < 0:
-            plotPoints = plotPoints[::-1]  # Reverse the list
-            plotPoints = [[x - 1000,y] for x,y in plotPoints]
-        else:
-            plotPoints = [[x + 160,y] for x,y in plotPoints]
-
-        return plotPoints
 
     def shootgun(self):
         """
@@ -185,18 +177,39 @@ class Player(pygame.sprite.Sprite):
         self.sphere_indices.append(0)  # Add sphere index for the new graph
         self.graph_creation_times.append(time.time())  # Store the creation time of the graph
 
+    def drawgraph(self, equationStr="d[0]=sin(50*x)*50"):
+        plotPoints = []
+        for x in range(self.rect.x, self.rect.x + 1000):  # Adjust range as needed
+            d = [0]
+            exec(equationStr)
+            y = d[0]
+            y = -y + self.rect.y + 155  # Adjust Y value to fit the floor
+            plotPoints.append([x, y])
+
+        if self.facing == 'left':
+            plotPoints = plotPoints[::-1]  # Reverse the list
+            plotPoints = [[x - 1000, y] for x, y in plotPoints]
+        else:
+            plotPoints = [[x + 160, y] for x, y in plotPoints]
+
+        return plotPoints
 
 # Function to draw the graph (Fixed relative to the floor, affected by camera)
 # Setup
-backdrop = pygame.image.load(os.path.join('images', 'stage.png'))
+backdrop = pygame.image.load(os.path.join('images', 'Background/Background.png'))
+backdrop = pygame.transform.scale(backdrop, (1920, 1080))
 clock = pygame.time.Clock()
 pygame.init()
 backdropbox = world.get_rect()
 main = True
 
 player = Player()  # spawn player
+enemy = Enemy(x=600, y=100, sprite_path='images/Centipede/Centipede_sneer.png', frame_width=72, frame_height=72, num_frames=4)
+
 player_list = pygame.sprite.Group()
 player_list.add(player)
+enemy_list = pygame.sprite.Group()
+enemy_list.add(enemy)
 steps = 10
 
 # Camera setup
@@ -285,8 +298,14 @@ while main:
     # Update player position and sprite
     player.update()
 
+    # Update enemy position and sprite
+    enemy.update()
+
     # Manually draw the player sprite using the camera
     world.blit(player.image, camera.apply(player))
+    
+    # Manually draw the enemy sprite using the camera
+    world.blit(enemy.image, camera.apply(enemy))
 
     pygame.display.flip()
     clock.tick(fps)
