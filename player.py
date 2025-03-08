@@ -1,6 +1,8 @@
+import time
 import pygame
 import sys
 import os
+from math import *
 
 # Variables
 worldx = 960
@@ -15,15 +17,44 @@ WHITE = (254, 254, 254)
 ALPHA = (0, 255, 0)
 FLOOR_HEIGHT = 600  # Floor level (adjust as needed)
 
-'''
-Objects
-'''
+# Camera class to handle centering the screen on the player
+class Camera:
+    def __init__(self, width, height):
+        self.camera = pygame.Rect(0, 0, width, height)
+        self.world_size = pygame.Rect(0, 0, 2000, 1000)  # Size of the world (adjust this if needed)
+        self.bounds = pygame.Rect(0, 0, width, height)
 
+    def apply(self, entity):
+        """
+        Moves the entity's rect relative to the camera's position.
+        """
+        if isinstance(entity, pygame.sprite.Sprite):
+            return entity.rect.move(self.camera.topleft)
+        elif isinstance(entity, pygame.Rect):
+            return entity.move(self.camera.topleft)
+        else:
+            raise ValueError("entity must be a pygame.sprite.Sprite or pygame.Rect")
+
+    def update(self, target):
+        """
+        Update the camera's position to follow the target (the player).
+        """
+        x = -target.rect.centerx + int(self.camera.width / 2)
+        y = -target.rect.centery + int(self.camera.height / 2)
+
+        # Keep the camera inside the world bounds
+        x = min(0, x)
+        y = min(0, y)
+        x = max(-(self.world_size.width - self.camera.width), x)
+        y = max(-(self.world_size.height - self.camera.height), y)
+
+        self.camera = pygame.Rect(x, y, self.camera.width, self.camera.height)
+
+# Player class
 class Player(pygame.sprite.Sprite):
     """
     Spawn a player from a sprite sheet
     """
-
     def __init__(self):
         pygame.sprite.Sprite.__init__(self)
         self.movex = 0
@@ -37,18 +68,11 @@ class Player(pygame.sprite.Sprite):
         self.velocity_y = 0  # For gravity
         self.on_ground = False
 
-        self.images.add(self.load_animation_frames('images/Soldier_1/Attack.png', 128, 128, 3, scale_factor=2))  # Scale sprite
-        self.images.add(self.load_animation_frames('images/Soldier_1/Dead.png', 128, 128, 4, scale_factor=2))  # Scale sprite
-        self.images.add(self.load_animation_frames('images/Soldier_1/Explosion.png', 128, 128, 8, scale_factor=2))  # Scale sprite
-        self.images.add(self.load_animation_frames('images/Soldier_1/Grenade.png', 128, 128, 9, scale_factor=2))  # Scale sprite
-        self.images.add(self.load_animation_frames('images/Soldier_1/Hurt.png', 128, 128, 3, scale_factor=2))  # Scale sprite
-        self.images.add(self.load_animation_frames('images/Soldier_1/Idle.png', 128, 128, 7, scale_factor=2))  # Scale sprite
-        self.images.add(self.load_animation_frames('images/Soldier_1/Recharge.png', 128, 128, 13, scale_factor=2))  # Scale sprite
-        self.images.add(self.load_animation_frames('images/Soldier_1/Run.png', 128, 128, 8, scale_factor=2))  # Scale sprite
-        self.images.add(self.load_animation_frames('images/Soldier_1/Shot_1.png', 128, 128, 4, scale_factor=2))  # Scale sprite
-        self.images.add(self.load_animation_frames('images/Soldier_1/Shot_2.png', 128, 128, 4, scale_factor=2))  # Scale sprite
-
-
+        self.shooting = False  # Flag to control the shooting action
+        self.sphere_radius = 5
+        self.graphs = []  # Store multiple graphs
+        self.sphere_indices = []  # Store the sphere index for each graph
+        self.graph_creation_times = []  # Store the creation time for each graph
 
     def load_animation_frames(self, image_path, frame_width, frame_height, num_frames, scale_factor=2):
         """
@@ -101,8 +125,6 @@ class Player(pygame.sprite.Sprite):
         # Apply gravity only if not on the ground
         if not self.on_ground:
             self.velocity_y += 1  # gravity effect
-        else:
-            self.velocity_y = 0  # reset gravity when on the ground
 
         # Move player with velocity
         self.rect.x += self.movex
@@ -133,16 +155,39 @@ class Player(pygame.sprite.Sprite):
         """
         Make the player jump if on the ground
         """
-        # self.velocity_y = -15  # Jump force
         if self.on_ground:
-            print("Jumping!")
             self.velocity_y = -15  # Jump force
-        self.velocity_y = -15  # Jump force
 
-'''
-Setup
-'''
+    def drawgraph(self, equationStr="d[0]=sin(50*x)*50"):
+        plotPoints = []
+        for x in range(self.rect.x, self.rect.x + 1000):  # Adjust range as needed
+            d = [0]
+            exec(equationStr)
+            y = d[0]
+            y = -y + self.rect.y + 155  # Adjust Y value to fit the floor
+            plotPoints.append([x, y])
 
+        if self.movex < 0:
+            plotPoints = plotPoints[::-1]  # Reverse the list
+            plotPoints = [[x - 1000,y] for x,y in plotPoints]
+        else:
+            plotPoints = [[x + 160,y] for x,y in plotPoints]
+
+        return plotPoints
+
+    def shootgun(self):
+        """
+        Start shooting and store graph points to follow
+        Freeze the plotPoints
+        """
+        graph_points = self.drawgraph()  # Generate graph points
+        self.graphs.append(graph_points)  # Store the graph
+        self.sphere_indices.append(0)  # Add sphere index for the new graph
+        self.graph_creation_times.append(time.time())  # Store the creation time of the graph
+
+
+# Function to draw the graph (Fixed relative to the floor, affected by camera)
+# Setup
 backdrop = pygame.image.load(os.path.join('images', 'stage.png'))
 clock = pygame.time.Clock()
 pygame.init()
@@ -154,10 +199,10 @@ player_list = pygame.sprite.Group()
 player_list.add(player)
 steps = 10
 
-'''
-Main Loop
-'''
+# Camera setup
+camera = Camera(worldx, worldy)
 
+# Main Loop
 while main:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -181,6 +226,9 @@ while main:
             if event.key == pygame.K_UP or event.key == ord('w'):
                 player.jump()  # Make the player jump when 'w' is pressed
 
+            if event.key == ord(' '):
+                player.shootgun()  # Make the player shoot
+
         if event.type == pygame.KEYUP:
             if event.key == pygame.K_LEFT or event.key == ord('a'):
                 player.control(steps, 0)
@@ -190,17 +238,55 @@ while main:
     # Clear previous frames manually to prevent smearing
     world.fill(BLACK)  # Clear screen before redrawing (now just filling with black)
 
-    # Draw the backdrop
-    world.blit(backdrop, backdropbox)
+    # Update camera position based on player movement
+    camera.update(player)
+
+    # Draw the backdrop using the camera to apply the correct offset
+    world.blit(backdrop, camera.apply(pygame.Rect(0, 0, worldx, worldy)))
     
     # Draw the floor (you can adjust the color of the floor)
     pygame.draw.rect(world, (0, 0, 0), (0, FLOOR_HEIGHT, worldx, worldy - FLOOR_HEIGHT))  # Black floor
     
+    # Draw all graphs
+    for i, graph in enumerate(player.graphs):
+        # Create a surface to render the graph on
+        graph_surface = pygame.Surface((worldx, worldy), pygame.SRCALPHA)  # Create a surface with alpha channel
+
+        # Check if one second has passed since the graph was created
+        elapsed_time = time.time() - player.graph_creation_times[i]
+        
+        # If more than 1 second has passed, make the graph transparent
+        if elapsed_time >= 0.4:
+            graph_color = (0, 0, 0, 0)  # Transparent
+        elif elapsed_time >= 0.25:
+            graph_color = (255, 0, 0, 25)  # Transparent
+        elif elapsed_time >= 0.1:
+            graph_color = (255, 255, 0, 50)  # Transparent
+        elif elapsed_time >= 0.05:
+            graph_color = (255, 255, 255, 200) 
+        else:
+            graph_color = (0, 0, 255)  # blue color for the graph
+
+        # Draw the graph on the transparent surface
+        transformed_points = [camera.apply(pygame.Rect(x, y, 0, 0)).topleft for x, y in graph]
+        pygame.draw.lines(graph_surface, graph_color, False, transformed_points, 2)
+
+        # Blit the graph surface to the main world (still with transparency if needed)
+        world.blit(graph_surface, (0, 0))
+        
+        # Draw the spheres that follow the graph
+        if player.sphere_indices[i] < len(graph):
+            sphere_x, sphere_y = graph[player.sphere_indices[i]]
+            sphere_x, sphere_y = camera.apply(pygame.Rect(sphere_x, sphere_y, 0, 0)).topleft  # Apply camera to the sphere
+            sphere_color = [0, 0, 255]  # Blue color for the sphere
+            pygame.draw.circle(world, sphere_color, (int(sphere_x), int(sphere_y)), player.sphere_radius)
+            player.sphere_indices[i] += 1
+
     # Update player position and sprite
     player.update()
 
-    # Manually draw the player sprite using blit
-    world.blit(player.image, player.rect)
+    # Manually draw the player sprite using the camera
+    world.blit(player.image, camera.apply(player))
 
     pygame.display.flip()
     clock.tick(fps)
