@@ -133,10 +133,11 @@ class Player(pygame.sprite.Sprite):
         """
         Make the player jump if on the ground
         """
-        self.velocity_y = -15  # Jump force
+        # self.velocity_y = -15  # Jump force
         if self.on_ground:
             print("Jumping!")
             self.velocity_y = -15  # Jump force
+        self.velocity_y = -15  # Jump force
 
 '''
 Setup

@@ -88,8 +88,6 @@ class Player(pygame.sprite.Sprite):
         # Apply gravity only if not on the ground
         if not self.on_ground:
             self.velocity_y += 1  # gravity effect
-        else:
-            self.velocity_y = 0  # reset gravity when on the ground
 
         # Move player with velocity
         self.rect.x += self.movex
@@ -121,7 +119,7 @@ class Player(pygame.sprite.Sprite):
         Make the player jump if on the ground
         """
         if self.on_ground:
-            print("Jumping!")
+            # print("Jumping!")
             self.velocity_y = -15  # Jump force
 
 '''
